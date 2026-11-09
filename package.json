@@ -1,0 +1,61 @@
+{
+  "name": "della",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Della: a single-owner, serverless personal assistant over SMS (Cloudflare Workers + D1 + Queues).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "bootstrap": "npm ci && npm run db:migrate:local && node scripts/bootstrap-dev-vars.mjs",
+    "dev": "wrangler dev",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:staging": "node scripts/guard-env.mjs staging && wrangler d1 migrations apply DB --remote --env staging",
+    "db:migrate:production": "node scripts/guard-env.mjs production && wrangler d1 migrations apply DB --remote --env production",
+    "seed:demo": "wrangler d1 execute DB --local --file scripts/seed-demo.sql --yes",
+    "demo": "node scripts/run-acceptance.mjs",
+    "demo:extension": "node scripts/demo-extension.mjs",
+    "test": "vitest run --project unit --project integration",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:acceptance": "node scripts/run-acceptance.mjs",
+    "test:e2e": "playwright test",
+    "test:ai:live": "node scripts/live-ai-eval.mjs",
+    "test:memory:live": "node scripts/live-ai-eval.mjs --memory",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
+    "build": "wrangler deploy --dry-run --outdir dist --env=\"\"",
+    "build:staging": "wrangler deploy --dry-run --outdir dist-staging --env staging",
+    "build:production": "wrangler deploy --dry-run --outdir dist-production --env production",
+    "build:extension": "node scripts/build-extension.mjs",
+    "check": "npm run lint && npm run typecheck && npm run db:validate && npm run test && npm run test:acceptance && npm run demo:extension && npm run build:extension && npm run build && npm run build:staging && npm run build:production",
+    "db:validate": "node --no-warnings scripts/validate-migrations.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "deploy:staging": "node scripts/guard-env.mjs staging && wrangler deploy --env staging",
+    "deploy:production": "node scripts/guard-env.mjs production && wrangler deploy --env production",
+    "backup": "node scripts/backup.mjs",
+    "restore:local": "node scripts/restore-local.mjs",
+    "provision:staging": "node scripts/provision.mjs --env staging",
+    "provision:production": "node scripts/provision.mjs --env production"
+  },
+  "dependencies": {
+    "hono": "4.13.17",
+    "rrule": "2.8.1",
+    "temporal-polyfill": "1.0.8",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.6.0",
+    "@cloudflare/workers-types": "5.20261108.1",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.0",
+    "eslint": "10.14.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0",
+    "wrangler": "4.158.0"
+  }
+}

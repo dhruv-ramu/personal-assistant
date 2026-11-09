@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Lint and format
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Validate migrations and Wrangler config
+        run: npm run db:validate
+      - name: Unit and integration tests (Workers runtime, real D1 migrations, mocked providers)
+        run: npm test
+      - name: Acceptance scenarios (simulated providers; base S1–S17 and extension X1–X27)
+        run: npm run test:acceptance
+      - name: Integrated extension demo (simulated)
+        run: npm run demo:extension
+      - name: Browser extension builds (Firefox + Chromium)
+        run: npm run build:extension
+      - name: Worker bundle dry runs (no deploy)
+        run: npm run build && npm run build:staging && npm run build:production
+      - name: Browser tests (admin flows)
+        run: npx playwright install --with-deps chromium && npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acceptance-results
+          path: |
+            artifacts/acceptance-results.json
+            artifacts/extension-demo.md
+            docs/ACCEPTANCE_RESULTS.md
+            docs/DELLA_EXTENSION_ACCEPTANCE_RESULTS.md
+          if-no-files-found: ignore

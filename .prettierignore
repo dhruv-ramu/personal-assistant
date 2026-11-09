@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-*
+.wrangler
+artifacts
+playwright-report
+test-results
+package-lock.json
+Jarvis_Cursor_Build_Prompt.md
+docs/ACCEPTANCE_RESULTS.md
+*.md

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Della companion</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>Della companion</h1>
+    <section id="unpaired" hidden>
+      <p>Pair this browser with your Della server. Get a one-time code from the dashboard (Devices).</p>
+      <label>Server URL <input id="server" type="url" placeholder="https://della.example.workers.dev" required /></label>
+      <label>Pairing code <input id="code" type="text" maxlength="12" autocomplete="off" required /></label>
+      <button id="pair">Pair</button>
+    </section>
+    <section id="paired" hidden>
+      <p id="status"></p>
+      <button id="checkin" hidden>Check in</button>
+      <p class="note">This extension never reads tabs, pages, URLs, or history. A check-in records only that you clicked in this browser.</p>
+      <button id="refresh" class="secondary">Refresh</button>
+      <button id="unpair" class="secondary">Unpair</button>
+    </section>
+    <p id="error" role="alert"></p>
+    <script src="popup.js"></script>
+  </body>
+</html>

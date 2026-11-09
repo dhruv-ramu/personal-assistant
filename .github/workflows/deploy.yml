@@ -1,0 +1,38 @@
+name: Deploy (manual)
+
+# Never runs automatically. Requires a manual dispatch, a CLOUDFLARE_API_TOKEN secret on the
+# matching GitHub environment, and (recommended) required reviewers on the production environment.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Environment to deploy"
+        required: true
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint && npm run typecheck && npm test && npm run db:validate
+      - name: Apply D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CONFIRM_PRODUCTION: ${{ inputs.target == 'production' && 'della' || '' }}
+        run: npm run db:migrate:${{ inputs.target }}
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CONFIRM_PRODUCTION: ${{ inputs.target == 'production' && 'della' || '' }}
+        run: npm run deploy:${{ inputs.target }}

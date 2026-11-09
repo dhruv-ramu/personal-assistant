@@ -1,0 +1,44 @@
+# Local development variables for `wrangler dev`. Copy to .dev.vars (git-ignored), or run
+# `node scripts/bootstrap-dev-vars.mjs` to generate fresh local secrets automatically.
+# Never put real production credentials here. Staging/production secrets use `wrangler secret put`.
+
+# Trusted owner identity. Leave blank locally to use the simulator's fictional owner number.
+OWNER_PHONE_E164=
+# PUBLIC_BASE_URL is required for live webhooks (exact HTTPS origin Twilio/Google call).
+PUBLIC_BASE_URL=
+
+ADMIN_BOOTSTRAP_SECRET=generate-me
+DATA_ENCRYPTION_KEY=generate-me
+SIM_WEBHOOK_SECRET=generate-me
+
+# Live providers (only needed when selected; leave blank for the simulated demo).
+OPENAI_API_KEY=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=
+TWILIO_MESSAGING_SERVICE_SID=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=
+GOOGLE_EXPECTED_ACCOUNT=
+
+# Extension (optional live adapters; leave blank to keep the simulated ones).
+# GMAIL_REDIRECT_URI=        # separate read-only Gmail grant, e.g. https://<host>/oauth/gmail/callback
+# NWS_CONTACT=               # contact for the api.weather.gov User-Agent (email or URL), required for INFO_PROVIDER=nws
+# MEDIA_STORE=local          # r2 in staging/production (private bucket binding MEDIA)
+# VISION_PROVIDER=simulated  # openai to assess photos (requires OPENAI_API_KEY; the provider sees the image)
+# EMBEDDING_PROVIDER=simulated
+# SEMANTIC_INDEX=d1          # vectorize requires a VECTORS binding
+# EMAIL_PROVIDER=simulated
+# INFO_PROVIDER=simulated
+# Deployment-level kill switches (default true; "false" overrides any owner setting):
+# CAPTURE_ENABLED, SEMANTIC_INDEX_ENABLED, UPLOADS_ENABLED, MMS_INGEST_ENABLED, IMAGE_ASSESSMENT_ENABLED,
+# BROWSER_TELEMETRY_ENABLED, MORNING_ROUTINES_ENABLED, TASK_ACCOUNTABILITY_ENABLED, EMAIL_READ_ENABLED,
+# CURRENT_INFO_ENABLED, SUGGESTIONS_ENABLED
+
+# Provider selection / safety flags override the defaults in wrangler.jsonc when set here.
+# SMS_PROVIDER=simulated
+# VOICE_PROVIDER=simulated
+# CALENDAR_PROVIDER=simulated
+# AI_PROVIDER=simulated
+# DRY_RUN=true
