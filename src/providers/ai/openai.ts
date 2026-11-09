@@ -1,9 +1,9 @@
-import { InterpretationSchema, interpretationJsonSchema } from "../../domain/actions";
+import { ALL_FEATURES, InterpretationSchema, interpretationJsonSchema, type SchemaFeatures } from "../../domain/actions";
 import { redactText } from "../../security/redaction";
 import type { Fetcher } from "../http";
 import { isAbortOrNetworkError } from "../http";
 import type { Planner, PlannerContext, PlannerResult } from "../types";
-import { SYSTEM_PROMPT, buildUserMessage } from "./prompt";
+import { buildUserMessage, systemPrompt } from "./prompt";
 
 export interface OpenAiPlannerConfig {
   apiKey: string;
@@ -22,7 +22,7 @@ interface ResponsesBody {
   incomplete_details?: { reason?: string } | null;
   error?: { message?: string } | null;
   output?: Array<{ type: string; content?: Array<{ type: string; text?: string; refusal?: string }> }>;
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } };
 }
 
 /**
@@ -45,6 +45,7 @@ export class OpenAiPlanner implements Planner {
 
   private async call(
     input: Array<{ role: string; content: string }>,
+    features: SchemaFeatures,
   ): Promise<{ ok: true; body: ResponsesBody } | { ok: false; kind: "timeout" | "rate_limited" | "unavailable"; detail: string }> {
     const body = {
       model: this.cfg.model,
@@ -52,7 +53,7 @@ export class OpenAiPlanner implements Planner {
       max_output_tokens: this.cfg.maxOutputTokens ?? 2000,
       reasoning: { effort: this.cfg.reasoningEffort },
       input,
-      text: { format: { type: "json_schema", name: "della_interpretation", strict: true, schema: interpretationJsonSchema() } },
+      text: { format: { type: "json_schema", name: "della_interpretation", strict: true, schema: interpretationJsonSchema(features) } },
     };
     let res: Response;
     try {
@@ -74,17 +75,18 @@ export class OpenAiPlanner implements Planner {
   }
 
   async interpret(ctx: PlannerContext): Promise<PlannerResult> {
-    const usage = { inputTokens: 0, outputTokens: 0 };
+    const usage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
     const model = this.cfg.model;
     if (!this.cfg.enabled) return { kind: "disabled", detail: "AI_LIVE_ENABLED is false", usage, model };
+    const features = ctx.features ?? ALL_FEATURES;
     const userMessage = buildUserMessage(ctx).slice(0, this.cfg.maxInputChars ?? 12_000);
     const input = [
-      { role: "developer", content: SYSTEM_PROMPT },
+      { role: "developer", content: systemPrompt(features) },
       { role: "user", content: userMessage },
     ];
     let repaired = false;
     for (let transportAttempt = 0; transportAttempt < 2;) {
-      const r = await this.call(input);
+      const r = await this.call(input, features);
       if (!r.ok) {
         transportAttempt++;
         if (transportAttempt < 2) {
@@ -95,6 +97,7 @@ export class OpenAiPlanner implements Planner {
       }
       usage.inputTokens += r.body.usage?.input_tokens ?? 0;
       usage.outputTokens += r.body.usage?.output_tokens ?? 0;
+      usage.cachedInputTokens += r.body.usage?.input_tokens_details?.cached_tokens ?? 0;
       if (r.body.status === "incomplete") return { kind: "incomplete", detail: `Incomplete: ${r.body.incomplete_details?.reason ?? "unknown"}`, usage, model };
       if (r.body.status && r.body.status !== "completed") return { kind: "unavailable", detail: `Response status ${r.body.status}`, usage, model };
       const message = r.body.output?.find((o) => o.type === "message");

@@ -31,6 +31,7 @@ import { getTask } from "../domain/tasks";
 import { featureOn, getExtSettings } from "../ext/settings";
 import { captureOffNotice, ingestKnowledge } from "../knowledge/ingest";
 import { offRecord } from "../knowledge/sensitive";
+import { statesSomething } from "../knowledge/gate";
 import { recordUndo } from "../knowledge/undo";
 import { ingestMmsEvidence } from "../media/uploads";
 
@@ -293,19 +294,22 @@ async function aiPlan(ctx: AppContext, row: InboundRow, text: string, clar: Pend
   const p = localParts(row.received_at, tz);
   const weekday = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long" }).format(row.received_at);
   const openTaskRows = await ctx.db.all<{ short_id: string; title_enc: string; due_at: number | null }>(
-    "SELECT short_id, title_enc, due_at FROM tasks WHERE status = 'open' ORDER BY updated_at DESC LIMIT 15",
+    "SELECT short_id, title_enc, due_at FROM tasks WHERE status = 'open' ORDER BY updated_at DESC LIMIT 10",
   );
   const openTasks = [];
   for (const t of openTaskRows)
-    openTasks.push({ ref: t.short_id, title: (await ctx.crypto.decrypt(t.title_enc, "task")).slice(0, 80), due: t.due_at ? formatDateTime(t.due_at, tz) : null });
+    openTasks.push({ ref: t.short_id, title: (await ctx.crypto.decrypt(t.title_enc, "task")).slice(0, 60), due: t.due_at ? formatDateTime(t.due_at, tz) : null });
   const evRows = await ctx.db.all<{ summary_enc: string | null; start_at: number }>(
-    "SELECT summary_enc, start_at FROM calendar_events WHERE all_day = 0 AND status != 'cancelled' AND start_at BETWEEN ? AND ? ORDER BY start_at LIMIT 8",
+    "SELECT summary_enc, start_at FROM calendar_events WHERE all_day = 0 AND status != 'cancelled' AND start_at BETWEEN ? AND ? ORDER BY start_at LIMIT 5",
     ctx.clock.now(),
     ctx.clock.now() + 3 * 24 * 60 * MINUTE,
   );
   const upcomingEvents = [];
   for (const e of evRows) upcomingEvents.push({ title: ((await ctx.crypto.decryptNullable(e.summary_enc, "calendar")) ?? "").slice(0, 60), when: formatDateTime(e.start_at, tz) });
-  const turns = (await recentTurns(ctx, 6)).map((t) => ({ direction: t.direction, text: t.text, at: new Date(t.at).toISOString() }));
+  const turns = (await recentTurns(ctx, 4)).map((t) => ({ direction: t.direction, text: t.text.slice(0, 200), at: new Date(t.at).toISOString() }));
+  const ext = await getExtSettings(ctx.db);
+  const memory = featureOn(ctx, ext, "capture");
+  const features = { memory, knowledge: memory && statesSomething(text), accountability: featureOn(ctx, ext, "task_accountability") || featureOn(ctx, ext, "morning") };
   const started = Date.now();
   const result = await ctx.planner.interpret({
     messageText: text.slice(0, 1000),
@@ -317,10 +321,13 @@ async function aiPlan(ctx: AppContext, row: InboundRow, text: string, clar: Pend
     pendingQuestion: clar?.prompt ?? null,
     openTasks,
     upcomingEvents,
+    features,
     capabilitiesNote:
       "tasks, reminders, follow-ups, Google Calendar read/create/move/cancel (no invitations), wake-up calls, settings (quiet hours, briefs, check-ins), pause/resume, memory (items, promises, waiting-for, decisions, notes), planning, owner-requested accountability sessions and morning routines",
   });
   const cost = estimateAiCostUsd(result.usage.inputTokens, result.usage.outputTokens);
+  if (result.usage.inputTokens)
+    log("info", "ai_usage", { input: result.usage.inputTokens, cached: result.usage.cachedInputTokens ?? 0, output: result.usage.outputTokens, knowledge: features.knowledge });
   await ctx.db.run(
     "INSERT INTO ai_requests (id, inbound_id, model, outcome, input_tokens, output_tokens, latency_ms, estimated_cost_usd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     newId("ai"),
@@ -337,7 +344,7 @@ async function aiPlan(ctx: AppContext, row: InboundRow, text: string, clar: Pend
   if (result.kind === "disabled") await releaseUsage(ctx, reservation);
   else await commitUsage(ctx, reservation, 1);
   if (result.kind !== "ok") {
-    log("warn", "planner_unavailable", { kind: result.kind, inboundId: row.id });
+    log("warn", "planner_unavailable", { kind: result.kind, detail: "detail" in result ? String(result.detail).slice(0, 300) : "", inboundId: row.id });
     return unsupportedPlan(row, `ai_unavailable:${result.kind}`);
   }
   return { source_message_id: row.id, source: "ai", interpretation: result.interpretation };

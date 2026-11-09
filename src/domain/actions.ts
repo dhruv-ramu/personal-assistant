@@ -25,7 +25,8 @@ const recurrence = RecurrenceSpecSchema.nullable();
 const taskRef = z.string().max(120).nullable().describe("Short task ID like T4K8, or words identifying the task; null = the task in context.");
 const title = z.string().min(1).max(200);
 
-export const ActionSchema = z.discriminatedUnion("type", [
+/** Core assistant actions (tasks, reminders, calendar, calls, settings). Always offered to the model. */
+const CORE_ACTIONS = [
   z.object({
     type: z.literal("create_task"),
     title,
@@ -129,7 +130,25 @@ export const ActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("resume_automation") }),
   z.object({ type: z.literal("answer_clarification"), answer: z.string().max(200) }),
   z.object({ type: z.literal("answer_confirmation"), nonce: z.string().max(8).nullable(), accept: z.boolean() }),
-  // ---- Extension: memory, secretary, planning, accountability ----
+  z.object({ type: z.literal("help") }),
+  z.object({ type: z.literal("general_reply"), text: z.string().max(320) }),
+  z.object({ type: z.literal("unsupported"), reason: z.string().max(200) }),
+  z.object({ type: z.literal("activity_history"), day: z.enum(["today", "yesterday"]) }),
+  z.object({ type: z.literal("undo") }),
+  z.object({ type: z.literal("suggestion_response"), op: z.enum(["accept", "dismiss", "snooze", "never"]), number: z.number().int().min(1).max(9).nullable() }),
+  z.object({
+    type: z.literal("enable_feature"),
+    feature: z.enum(["memory", "task_accountability", "morning_routines", "suggestions", "meeting_prep", "post_meeting", "evening_reset", "photos_assessment"]),
+    enabled: z.boolean(),
+  }),
+  z.object({ type: z.literal("plan_day"), mode: z.enum(["plan", "minimum_viable", "evening_reset"]), day: tsN }),
+  z.object({ type: z.literal("context_tasks"), minutes: z.number().int().min(1).max(600).nullable(), context: z.array(z.string().max(30)).max(5) }),
+  z.object({ type: z.literal("free_time"), minutes: z.number().int().min(5).max(720) }),
+  z.object({ type: z.literal("trip_brief"), destination: z.string().max(120).nullable() }),
+] as const;
+
+/** Memory actions: offered to the model only while memory capture is on. */
+const MEMORY_ACTIONS = [
   z.object({
     type: z.literal("memory_query"),
     query_kind: z.enum([
@@ -158,10 +177,10 @@ export const ActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("memory_correct"), target: z.string().max(160), correction: z.string().max(300) }),
   z.object({ type: z.literal("capture_control"), mode: z.enum(["pause", "resume", "enable", "status"]), until: tsN }),
   z.object({ type: z.literal("resume_project"), project: z.string().max(120) }),
-  z.object({ type: z.literal("plan_day"), mode: z.enum(["plan", "minimum_viable", "evening_reset"]), day: tsN }),
-  z.object({ type: z.literal("context_tasks"), minutes: z.number().int().min(1).max(600).nullable(), context: z.array(z.string().max(30)).max(5) }),
-  z.object({ type: z.literal("free_time"), minutes: z.number().int().min(5).max(720) }),
-  z.object({ type: z.literal("trip_brief"), destination: z.string().max(120).nullable() }),
+] as const;
+
+/** Accountability actions: offered only while task accountability or morning routines are on. */
+const ACCOUNTABILITY_ACTIONS = [
   z.object({
     type: z.literal("accountability_start"),
     task_ref: z.string().max(120).nullable(),
@@ -192,18 +211,9 @@ export const ActionSchema = z.discriminatedUnion("type", [
     first_activity: z.string().max(80).nullable(),
     device_check: z.boolean(),
   }),
-  z.object({ type: z.literal("activity_history"), day: z.enum(["today", "yesterday"]) }),
-  z.object({ type: z.literal("undo") }),
-  z.object({ type: z.literal("suggestion_response"), op: z.enum(["accept", "dismiss", "snooze", "never"]), number: z.number().int().min(1).max(9).nullable() }),
-  z.object({
-    type: z.literal("enable_feature"),
-    feature: z.enum(["memory", "task_accountability", "morning_routines", "suggestions", "meeting_prep", "post_meeting", "evening_reset", "photos_assessment"]),
-    enabled: z.boolean(),
-  }),
-  z.object({ type: z.literal("help") }),
-  z.object({ type: z.literal("general_reply"), text: z.string().max(320) }),
-  z.object({ type: z.literal("unsupported"), reason: z.string().max(200) }),
-]);
+] as const;
+
+export const ActionSchema = z.discriminatedUnion("type", [...CORE_ACTIONS, ...MEMORY_ACTIONS, ...ACCOUNTABILITY_ACTIONS]);
 export type Action = z.infer<typeof ActionSchema>;
 export type ActionType = Action["type"];
 export type ActionOf<T extends ActionType> = Extract<Action, { type: T }>;
@@ -212,10 +222,11 @@ export const MAX_ACTIONS = 5;
 
 /** The model's interpretation envelope. Self-reported confidence is deliberately absent. */
 export const InterpretationSchema = z.object({
-  intent: z.string().max(80),
-  time_expressions: z.array(z.string().max(120)).max(10),
-  references: z.array(z.string().max(120)).max(10),
-  missing_fields: z.array(z.string().max(60)).max(10),
+  // Bookkeeping fields: filled by deterministic/simulated planners; the live model doesn't write them.
+  intent: z.string().max(80).default(""),
+  time_expressions: z.array(z.string().max(120)).max(10).default([]),
+  references: z.array(z.string().max(120)).max(10).default([]),
+  missing_fields: z.array(z.string().max(60)).max(10).default([]),
   actions: z.array(ActionSchema).min(1).max(MAX_ACTIONS),
   knowledge: z.array(KnowledgeCandidateSchema).max(MAX_CANDIDATES).default([]).describe("Memories to store from this message; empty when nothing durable was said."),
 });
@@ -267,19 +278,18 @@ export const READ_ONLY_ACTIONS: ReadonlySet<ActionType> = new Set([
 
 type JsonSchema = Record<string, unknown>;
 
+/** Keywords the model doesn't need: Zod re-validates every bound after the response arrives. */
+const DROP_KEYWORDS = new Set(["$schema", "minLength", "maxLength", "minItems", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"]);
+
 function normalizeForStrict(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(normalizeForStrict);
   if (!node || typeof node !== "object") return node;
-  const obj = { ...(node as Record<string, unknown>) };
-  delete obj.$schema;
+  const obj: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node as Record<string, unknown>)) if (!DROP_KEYWORDS.has(k)) obj[k] = normalizeForStrict(v);
   if (obj.oneOf) {
     obj.anyOf = obj.oneOf;
     delete obj.oneOf;
   }
-  // Zod emits ±MAX_SAFE_INTEGER bounds for plain ints; they add nothing.
-  if (obj.minimum === -9007199254740991) delete obj.minimum;
-  if (obj.maximum === 9007199254740991) delete obj.maximum;
-  for (const [k, v] of Object.entries(obj)) obj[k] = normalizeForStrict(v);
   if (obj.type === "object" && obj.properties && typeof obj.properties === "object") {
     obj.additionalProperties = false;
     obj.required = Object.keys(obj.properties as object);
@@ -287,11 +297,69 @@ function normalizeForStrict(node: unknown): unknown {
   return obj;
 }
 
-let cachedSchema: JsonSchema | null = null;
+/** Inlines shared fragments that are smaller than a reference to them; renames the rest d0, d1, …. */
+function compactDefs(schema: JsonSchema): JsonSchema {
+  const defs = (schema.$defs ?? {}) as Record<string, unknown>;
+  const uses = new Map<string, number>();
+  for (const m of JSON.stringify(schema).matchAll(/"#\/\$defs\/([^"]+)"/g)) uses.set(m[1]!, (uses.get(m[1]!) ?? 0) + 1);
+  const inline = new Set(Object.keys(defs).filter((k) => (uses.get(k) ?? 0) <= 1 || JSON.stringify(defs[k]).length <= 24));
+  const names = new Map(
+    Object.keys(defs)
+      .filter((k) => !inline.has(k))
+      .map((k, i) => [k, `d${i}`]),
+  );
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(walk);
+    if (!node || typeof node !== "object") return node;
+    const obj = node as Record<string, unknown>;
+    if (typeof obj.$ref === "string") {
+      const key = obj.$ref.replace("#/$defs/", "");
+      const { $ref: _ref, ...rest } = obj;
+      if (inline.has(key)) return { ...(walk(defs[key]) as object), ...rest };
+      // OpenAI strict mode: a $ref may not carry sibling keywords (e.g. description).
+      if (names.has(key)) return { $ref: `#/$defs/${names.get(key)}` };
+    }
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) if (k !== "$defs") out[k] = walk(v);
+    return out;
+  };
+  const body = walk(schema) as JsonSchema;
+  if (names.size) body.$defs = Object.fromEntries([...names].map(([old, short]) => [short, walk(defs[old])]));
+  return body;
+}
 
-export function interpretationJsonSchema(): JsonSchema {
-  if (!cachedSchema) {
-    cachedSchema = normalizeForStrict(z.toJSONSchema(InterpretationSchema, { target: "draft-2020-12" })) as JsonSchema;
-  }
-  return cachedSchema;
+/** Which optional parts of the vocabulary the model is offered for this request. */
+export interface SchemaFeatures {
+  /** Memory questions/controls (memory on). */
+  memory: boolean;
+  /** Memory extraction candidates (memory on and the message states something). */
+  knowledge?: boolean;
+  accountability: boolean;
+}
+
+export const ALL_FEATURES: SchemaFeatures = { memory: true, knowledge: true, accountability: true };
+
+const schemaCache = new Map<string, JsonSchema>();
+
+/**
+ * Strict JSON schema for one request. Only enabled feature groups are included, and repeated
+ * sub-schemas (time expressions, recurrence) are emitted once as $defs, which keeps the
+ * per-request token cost small. The response is still validated against the full Zod schema.
+ */
+export function interpretationJsonSchema(f: SchemaFeatures = ALL_FEATURES): JsonSchema {
+  const knowledge = f.knowledge ?? f.memory;
+  const key = `${f.memory ? "m" : ""}${knowledge ? "k" : ""}${f.accountability ? "a" : ""}`;
+  const hit = schemaCache.get(key);
+  if (hit) return hit;
+  const options = [...CORE_ACTIONS, ...(f.memory ? MEMORY_ACTIONS : []), ...(f.accountability ? ACCOUNTABILITY_ACTIONS : [])] as unknown as [
+    (typeof CORE_ACTIONS)[number],
+    ...(typeof CORE_ACTIONS)[number][],
+  ];
+  const wire = z.object({
+    actions: z.array(z.discriminatedUnion("type", options)).max(MAX_ACTIONS),
+    ...(knowledge ? { knowledge: z.array(KnowledgeCandidateSchema).max(MAX_CANDIDATES) } : {}),
+  });
+  const schema = compactDefs(normalizeForStrict(z.toJSONSchema(wire, { target: "draft-2020-12", reused: "ref" })) as JsonSchema);
+  schemaCache.set(key, schema);
+  return schema;
 }

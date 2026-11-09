@@ -65,6 +65,8 @@
     "staging": {
       "name": "della-staging",
       "workers_dev": true,
+      // One public origin only (webhook signatures are checked against PUBLIC_BASE_URL).
+      "preview_urls": false,
       "triggers": { "crons": ["* * * * *"] },
       "vars": {
         "APP_ENV": "staging",
@@ -73,12 +75,12 @@
         "SMS_PROVIDER": "simulated",
         "VOICE_PROVIDER": "simulated",
         "CALENDAR_PROVIDER": "simulated",
-        "AI_PROVIDER": "simulated",
+        "AI_PROVIDER": "openai",
         "OPENAI_MODEL": "gpt-6-luna",
         "SMS_LIVE_ENABLED": "false",
         "SMS_ELIGIBILITY_CONFIRMED": "false",
         "VOICE_LIVE_ENABLED": "false",
-        "AI_LIVE_ENABLED": "false",
+        "AI_LIVE_ENABLED": "true",
         "CALENDAR_WRITES_ENABLED": "false",
         "DRY_RUN": "true",
         "SIMULATOR_ENABLED": "true",
@@ -94,7 +96,7 @@
         {
           "binding": "DB",
           "database_name": "della-staging",
-          "database_id": "REPLACE_WITH_STAGING_D1_ID",
+          "database_id": "4958e912-064f-4347-8861-4efca6c2680b",
           "migrations_dir": "migrations",
         },
       ],
@@ -120,6 +122,7 @@
     "production": {
       "name": "della",
       "workers_dev": false,
+      "preview_urls": false,
       "triggers": { "crons": ["* * * * *"] },
       "vars": {
         "APP_ENV": "production",

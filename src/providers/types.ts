@@ -215,14 +215,16 @@ export interface PlannerContext {
   /** Untrusted external calendar text, passed only as data. */
   upcomingEvents: Array<{ title: string; when: string }>;
   capabilitiesNote: string;
+  /** Optional vocabulary offered to the model; omitted parts aren't sent (smaller, cheaper requests). */
+  features?: { memory: boolean; knowledge?: boolean; accountability: boolean };
 }
 
 export type PlannerResult =
-  | { kind: "ok"; interpretation: Interpretation; usage: { inputTokens: number; outputTokens: number }; model: string }
+  | { kind: "ok"; interpretation: Interpretation; usage: { inputTokens: number; outputTokens: number; cachedInputTokens?: number }; model: string }
   | {
       kind: "refused" | "invalid" | "incomplete" | "unavailable" | "timeout" | "rate_limited" | "disabled";
       detail: string;
-      usage: { inputTokens: number; outputTokens: number };
+      usage: { inputTokens: number; outputTokens: number; cachedInputTokens?: number };
       model: string;
     };
 
