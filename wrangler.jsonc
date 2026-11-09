@@ -74,7 +74,7 @@
         "OWNER_TIMEZONE": "America/Los_Angeles",
         "SMS_PROVIDER": "simulated",
         "VOICE_PROVIDER": "simulated",
-        "CALENDAR_PROVIDER": "simulated",
+        "CALENDAR_PROVIDER": "google",
         "AI_PROVIDER": "openai",
         "OPENAI_MODEL": "gpt-6-luna",
         "SMS_LIVE_ENABLED": "false",
