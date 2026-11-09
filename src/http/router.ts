@@ -6,6 +6,7 @@ import { log } from "../observability/log";
 import { safeErrorMessage } from "../security/redaction";
 import { adminRoutes } from "./admin";
 import { oauthRoutes } from "./oauth";
+import { publicRoutes } from "./public-pages";
 import { MAX_UPLOAD_BODY_BYTES, deviceRoutes, uploadRoutes } from "./ext-routes";
 import type { AppEnvBindings } from "./types";
 import { inboundSms, smsStatus, voiceGatherRoute, voiceInstructionsRoute, voiceStatusRoute } from "./webhooks";
@@ -26,6 +27,7 @@ export const SECURITY_HEADERS: Record<string, string> = {
 /**
  * Route policy (deny by default):
  *   GET  /health                       public, minimal
+ *   GET  /, /privacy, /terms           public static pages (no owner data)
  *   POST /webhooks/sms/inbound|status  provider signature required
  *   POST /webhooks/voice/*             provider signature required
  *   GET  /admin/login, POST /admin/login  public (throttled)
@@ -63,7 +65,7 @@ export function createApp(overrides?: OverridesFactory): Hono<AppEnvBindings> {
   });
 
   app.get("/health", (c) => c.json({ ok: true, service: "della" }));
-  app.get("/", (c) => c.redirect("/admin", 302));
+  app.route("/", publicRoutes());
 
   app.post("/webhooks/sms/inbound", inboundSms);
   app.post("/webhooks/sms/status", smsStatus);

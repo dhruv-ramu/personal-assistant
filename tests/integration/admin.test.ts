@@ -221,3 +221,30 @@ describe("Google OAuth flow", () => {
     expect((await h.db.first<{ status: string }>("SELECT status FROM calendar_connection"))!.status).toBe("disconnected");
   });
 });
+
+describe("public pages for OAuth app publishing", () => {
+  it("serves home, privacy policy, and terms without a session or owner data", async () => {
+    const h = await makeHarness();
+    for (const [path, text] of [
+      ["/", "single-user personal assistant"],
+      ["/privacy", "Google API Services User Data Policy"],
+      ["/terms", "Terms of Service"],
+    ] as const) {
+      const r = await h.fetchApp(new Request(`${ORIGIN}${path}`, { redirect: "manual" }));
+      expect(r.status).toBe(200);
+      const body = await r.text();
+      expect(body).toContain(text);
+      expect(body).not.toContain("+15550100001");
+      expect(r.headers.get("content-security-policy")).toContain("default-src 'none'");
+    }
+  });
+
+  it("serves the app logo shown on the home page and the OAuth consent screen", async () => {
+    const h = await makeHarness();
+    expect(await (await h.fetchApp(new Request(`${ORIGIN}/`))).text()).toContain('src="/logo.png"');
+    const r = await h.fetchApp(new Request(`${ORIGIN}/logo.png`));
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("image/png");
+    expect([...new Uint8Array(await r.arrayBuffer()).slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  });
+});
