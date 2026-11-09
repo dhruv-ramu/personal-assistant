@@ -65,7 +65,7 @@ Set secrets interactively so values stay out of shell history:
 npx wrangler secret put ADMIN_BOOTSTRAP_SECRET --env staging   # ≥24 random chars
 npx wrangler secret put DATA_ENCRYPTION_KEY --env staging      # k1:<base64 of 32 random bytes>
 npx wrangler secret put OWNER_PHONE_E164 --env staging         # your real number, +1…
-npx wrangler secret put PUBLIC_BASE_URL --env staging          # e.g. https://della-staging.<subdomain>.workers.dev
+npx wrangler secret put PUBLIC_BASE_URL --env staging          # the custom domain in wrangler.jsonc routes, e.g. https://della.dhruvramu.com
 # Only for providers you select:
 npx wrangler secret put TWILIO_ACCOUNT_SID --env staging
 npx wrangler secret put TWILIO_AUTH_TOKEN --env staging
@@ -104,8 +104,10 @@ Provider selection and safety flags are `vars` in `wrangler.jsonc` (`SMS_PROVIDE
 npm run check
 npm run db:migrate:staging
 npm run deploy:staging
-npm run doctor -- --env staging --url https://della-staging.<subdomain>.workers.dev
+npm run doctor -- --env staging --url https://della.dhruvramu.com
 ```
+
+Google OAuth publishing needs a domain you can verify in Search Console, which `*.workers.dev` can't be (Google treats `<subdomain>.workers.dev` as Cloudflare's). Staging therefore serves only on the custom domain set in `routes`; the domain's DNS must be on the same Cloudflare account.
 
 Sign in at `/admin`, open **Diagnostics**, and work through every blocker. Staging defaults to simulated providers with the simulator enabled, so you can run the acceptance flows against the deployed Worker.
 

@@ -66,8 +66,9 @@
   "env": {
     "staging": {
       "name": "della-staging",
-      "workers_dev": true,
       // One public origin only (webhook signatures are checked against PUBLIC_BASE_URL).
+      "routes": [{ "pattern": "della.dhruvramu.com", "custom_domain": true }],
+      "workers_dev": false,
       "preview_urls": false,
       "triggers": { "crons": ["* * * * *"] },
       "vars": {
